@@ -1,4 +1,4 @@
-import streamlit as st
+iimport streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.express as px
@@ -7,14 +7,8 @@ import plotly.express as px
 st.set_page_config(page_title="Börsen-Glaskugel", page_icon="🔮", layout="wide")
 
 st.title("🔮 Die Börsen-Glaskugel")
-st.subheader("Live-Performance Monitor & Community Dashboard")
+st.subheader("Live-Performance & News Dashboard")
 st.markdown("---")
-
-# Sidebar mit deinen Regeln
-st.sidebar.header("🛠 Info & Regeln")
-rules = ["1. Kein Mietgeld nutzen.", "2. Stop-Loss setzen.", "3. Gewinne abschöpfen."]
-for rule in rules:
-    st.sidebar.warning(rule)
 
 # --- DATEN-ENGINE ---
 tickers = {
@@ -26,33 +20,26 @@ tickers = {
 @st.cache_data(ttl=60)
 def load_data():
     results = []
-    news_dict = {} 
+    news_list = [] 
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
             info = t.fast_info
-            curr = info.last_price
-            prev = info.previous_close
-            curr = float(curr) if curr is not None else 0.0
-            prev = float(prev) if prev is not None else 0.0
+            curr = info.last_price or 0.0
+            prev = info.previous_close or 0.0
             perf = ((curr / prev) - 1) * 100 if prev > 0 else 0.0
             
-            results.append({
-                "Aktie": name, 
-                "Kurs": round(curr, 2), 
-                "Symbol": sym, 
-                "Performance %": round(perf, 2)
-            })
+            results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
             
-            # News mit Link speichern
+            # Alle News sammeln
             n = t.news
             if n:
-                news_dict[name] = {"title": n[0]['title'], "link": n[0]['link']}
+                news_list.append({"Aktie": name, "Title": n[0]['title'], "Link": n[0]['link']})
         except:
             results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym, "Performance %": 0.0})
-    return pd.DataFrame(results), news_dict
+    return pd.DataFrame(results), news_list
 
-live_df, live_news_dict = load_data()
+live_df, all_news = load_data()
 
 # --- LAYOUT ---
 col_l, col_r = st.columns([1, 1.2])
@@ -63,60 +50,51 @@ with col_l:
     
     st.write("---")
     st.header("🤖 Das Glaskugel-Orakel")
-    # Eindeutige, sortierte Liste gegen die Doppel-Einträge
     oracle_list = sorted(list(set(live_df["Aktie"].tolist())))
-    selected_oracle = st.selectbox("Wähle eine Aktie für eine Prognose:", oracle_list)
+    selected_oracle = st.selectbox("Wähle eine Aktie:", oracle_list)
     
     if st.button("Orakel befragen"):
         row = live_df[live_df["Aktie"] == selected_oracle].iloc[0]
         perf = row["Performance %"]
-        news_item = live_news_dict.get(selected_oracle)
+        # Finde News für diese spezielle Aktie
+        specific_news = next((item for item in all_news if item["Aktie"] == selected_oracle), None)
         
         st.write(f"**Analyse für {selected_oracle}:**")
-        
-        if news_item:
-            st.markdown(f"*Aktuelle News:* [{news_item['title']}]({news_item['link']})")
+        if specific_news:
+            st.markdown(f"🔗 [AKTUELL: {specific_news['Title']}]({specific_news['Link']})")
         
         if perf > 5:
-            st.balloons() # Party-Modus!
-            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Das Orakel sagt: Halt dich fest, wir fliegen!")
+            st.balloons()
+            st.success(f"🚀 RAKETE! {perf}% Plus. Das Orakel sagt: Anschnallen!")
         elif perf > 0:
-            st.info(f"✅ **SOLIDE.** {perf}% sind grüner Bereich. Das Orakel rät: Entspannt zurücklehnen.")
-        elif perf < -5:
-            st.error(f"💀 **AUTSCH.** {perf}% im Keller. Zeit für starke Nerven oder den Notausgang.")
-        elif perf < 0:
-            st.warning(f"📉 **DURCHHÄNGER.** {perf}% Minus. Die Bullen brauchen wohl auch eine Pause.")
+            st.info(f"✅ Stabil. {perf}% Plus. Gewinne laufen lassen.")
         else:
-            st.write("💤 **STILLSTAND.** Hier passiert gerade so viel wie in einer geschlossenen Bibliothek.")
+            st.warning(f"📉 {perf}%. Das Orakel rät zur Vorsicht.")
 
 with col_r:
     st.header("🔥 24h Performance-Map")
-    # ABSICHERUNG: Nur plotten, wenn Kurs > 0 und Performance eine Zahl ist
-    df_plot = live_df[(live_df["Kurs"] > 0) & (live_df["Performance %"].notnull())].copy()
-    
+    df_plot = live_df[live_df["Kurs"] > 0].copy()
     if not df_plot.empty:
         df_plot['size'] = 1 
-        try:
-            fig = px.treemap(
-                df_plot, path=['Aktie'], values='size',
-                color='Performance %', color_continuous_scale='RdYlGn',
-                color_continuous_midpoint=0, text_auto='.2f'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        except:
-            st.info("Die Heatmap wird gerade neu poliert...")
+        fig = px.treemap(df_plot, path=['Aktie'], values='size', color='Performance %', color_continuous_scale='RdYlGn', color_continuous_midpoint=0, text_auto='.2f')
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # --- NEU: NEWS ZENTRALE DIREKT SICHTBAR ---
+    st.write("---")
+    st.subheader("🗞️ Aktuelle Schlagzeilen (Live)")
+    if all_news:
+        for n in all_news[:5]: # Die 5 neuesten News anzeigen
+            st.markdown(f"**{n['Aktie']}**: [{n['Title']}]({n['Link']})")
     else:
-        st.warning("⚠️ Warte auf frische Marktdaten...")
+        st.write("Keine News gefunden (Börse schläft).")
 
-# --- COMMUNITY VOTING ---
+# --- VOTING ---
 st.divider()
 if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
 v1, v2 = st.columns([1, 2])
 with v1:
-    st.header("🗳️ Community-Voting")
-    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list, key="v_select")
-    if st.button("Stimme abgeben"): 
-        st.session_state.v[pick] += 1
-        st.toast(f"Stimme für {pick} gezählt!", icon='🔥')
+    st.header("🗳️ Voting")
+    pick = st.selectbox("Favorit?", oracle_list)
+    if st.button("Senden"): st.session_state.v[pick] += 1
 with v2:
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
