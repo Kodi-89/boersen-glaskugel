@@ -23,7 +23,7 @@ tickers = {
 @st.cache_data(ttl=60)
 def load_data():
     results = []
-    news_list = []
+    news_dict = {} # News pro Aktie speichern
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
@@ -33,14 +33,18 @@ def load_data():
             curr = float(curr) if curr is not None else 0.0
             prev = float(prev) if prev is not None else 0.0
             perf = ((curr / prev) - 1) * 100 if prev > 0 else 0.0
+            
             results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
+            
+            # News für das Orakel speichern
             n = t.news
-            if n: news_list.append({"Aktie": name, "Headline": n[0]['title'], "Link": n[0]['link']})
+            if n:
+                news_dict[name] = n[0]['title']
         except:
             results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym, "Performance %": 0.0})
-    return pd.DataFrame(results), news_list
+    return pd.DataFrame(results), news_dict
 
-live_df, live_news = load_data()
+live_df, live_news_dict = load_data()
 
 # --- LAYOUT ---
 col_l, col_r = st.columns([1, 1.2])
@@ -49,26 +53,32 @@ with col_l:
     st.header("📈 Echtzeit-Kurse")
     st.dataframe(live_df.style.format({"Performance %": "{:.2f}%"}), use_container_width=True)
     
-    # --- DAS KI-ORAKEL ---
+    # --- DAS VERBESSERTE KI-ORAKEL ---
     st.write("---")
     st.header("🤖 Das Glaskugel-Orakel")
-    selected_oracle = st.selectbox("Wähle eine Aktie für eine Prognose:", live_df["Aktie"].tolist())
+    
+    # FIX: set() entfernt Duplikate, sorted() sortiert von A-Z
+    oracle_list = sorted(list(set(live_df["Aktie"].tolist())))
+    selected_oracle = st.selectbox("Wähle eine Aktie für eine Prognose:", oracle_list)
     
     if st.button("Orakel befragen"):
         row = live_df[live_df["Aktie"] == selected_oracle].iloc[0]
         perf = row["Performance %"]
+        headline = live_news_dict.get(selected_oracle, "keine aktuellen Schlagzeilen")
         
         st.write(f"**Analyse für {selected_oracle}:**")
+        st.write(f"*Aktuelle News: {headline}*")
+        
         if perf > 5:
-            st.success(f"🚀 Raketenalarm! Mit {perf}% Momentum ist das Ding heißer als ein Grill im August. Aber Vorsicht: Wer zu spät springt, verbrennt sich die Finger!")
+            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Das Orakel sagt: Die News '{headline}' zündet gerade richtig. Wer jetzt nicht drin ist, schaut der Falcon 9 beim Start zu!")
         elif perf > 0:
-            st.info(f"✅ Schöner Trend. {perf}% Plus ist solide. Das Orakel sagt: Halten und Stop-Loss nachziehen. Langsam ernährt sich das Eichhörnchen.")
+            st.info(f"✅ **SOLIDE.** {perf}% sind ordentlich. Die Schlagzeile '{headline}' scheint den Kurs sanft zu stützen. Einmal tief durchatmen und Gewinne laufen lassen.")
         elif perf < -5:
-            st.error(f"💀 Autsch! {perf}% Crash. Das Orakel sieht Blut auf den Straßen. Entweder ein mutiger 'Buy the Dip' Moment oder das sinkende Schiff verlässt den Hafen.")
+            st.error(f"💀 **ALARMSTUFE ROT!** {perf}% Crash. Die News '{headline}' schlägt ein wie ein Meteorit. Das Orakel rät: Helm aufsetzen oder den 'Dip' mutig kaufen.")
         elif perf < 0:
-            st.warning(f"📉 Leichter Gegenwind. {perf}% sind kein Weltuntergang, aber die Bullen machen wohl gerade Mittagspause. Abwarten.")
+            st.warning(f"📉 **MÜDE BULLEN.** {perf}% Minus. Trotz der News '{headline}' fehlt der Schwung. Vielleicht mal eine Kaffeepause einlegen.")
         else:
-            st.write("💤 Totenstille. Hier passiert gerade gar nichts. Das Orakel gähnt.")
+            st.write("💤 **NUL-LINIE.** Weder Fisch noch Fleisch. Das Orakel schläft beim Lesen von '{headline}' fast ein.")
 
 with col_r:
     st.header("🔥 24h Performance-Map")
@@ -81,11 +91,6 @@ with col_r:
             color_continuous_midpoint=0, text_auto='.2f'
         )
         st.plotly_chart(fig, use_container_width=True)
-    
-    st.write("---")
-    st.subheader("🗞️ Top-Schlagzeilen")
-    for n in live_news[:3]:
-        st.markdown(f"**{n['Aktie']}**: [{n['Headline']}]({n['Link']})")
 
 # --- VOTING ---
 st.divider()
@@ -93,7 +98,9 @@ if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys
 v1, v2 = st.columns([1, 2])
 with v1:
     st.header("🗳️ Community-Voting")
-    pick = st.selectbox("Wer zündet als Nächstes?", list(tickers.keys()))
-    if st.button("Stimme abgeben"): st.session_state.v[pick] += 1
+    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list) # Auch hier die saubere Liste
+    if st.button("Stimme abgeben"): 
+        st.session_state.v[pick] += 1
+        st.success("Danke!")
 with v2:
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
