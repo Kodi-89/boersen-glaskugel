@@ -20,7 +20,7 @@ st.sidebar.info("Diese App gehört der Gemeinschaft. Sie dient der Aufklärung �
 st.sidebar.warning("⚠️ **Regeln:** 1. Kein Mietgeld. 2. Stop-Loss nutzen. 3. Gewinne abschöpfen.")
 
 # --- DATEN-ENGINE ---
-# Hier kannst du jederzeit neue Aktien hinzufügen 
+# Hier wurden die neuen Positionen ergänzt
 tickers = {
     "SUSS MicroTec": "SUE.DE", 
     "Delivery Hero": "DHER.DE", 
@@ -28,7 +28,11 @@ tickers = {
     "TUI AG": "TUI1.DE", 
     "Sable Offshore": "SOC", 
     "Immunic Inc.": "IMUX",
-    "Rheinmetall": "RHM.DE"
+    "Rheinmetall": "RHM.DE",
+    "Gemini Space Station": "GEMI",
+    "Tesla, Inc.": "TSLA",
+    "AMD, Inc.": "AMD",
+    "Microsoft Corp.": "MSFT"
 }
 
 @st.cache_data(ttl=300)
@@ -37,8 +41,12 @@ def load_data():
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
-            results.append({"Aktie": name, "Kurs": round(t.fast_info.last_price, 2), "Symbol": sym})
-        except: pass
+            # Wir rufen den aktuellsten Preis ab
+            price = t.fast_info.last_price
+            results.append({"Aktie": name, "Kurs": round(price, 2), "Symbol": sym})
+        except: 
+            # Falls ein Ticker (wie GEMI) noch nicht gelistet ist, setzen wir einen Platzhalter
+            results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym})
     return pd.DataFrame(results)
 
 live_df = load_data()
@@ -53,7 +61,7 @@ with col_left:
 with col_right:
     st.header("🔥 Markt-Heatmap")
     
-    # Automatisierte Daten für die Heatmap basierend auf der tickers-Liste
+    # Automatisierte Daten für die Heatmap basierend auf der aktuellen tickers-Liste
     df_heat = pd.DataFrame({
         "Aktie": live_df["Aktie"],
         "Momentum": [random.randint(-10, 100) for _ in range(len(live_df))],
@@ -86,18 +94,22 @@ col_v1, col_v2 = st.columns(2)
 with col_v1:
     st.header("🗳️ Community-Voting")
     if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
-    # Falls neue Ticker hinzugefügt wurden, Voting-Liste ergänzen
+    
+    # Sicherstellen, dass neue Ticker auch im Voting erscheinen
     for k in tickers.keys():
         if k not in st.session_state.v: st.session_state.v[k] = 0
         
     pick = st.selectbox("Wer zündet als Nächstes?", list(tickers.keys()))
-    if st.button("Stimme abgeben"): st.session_state.v[pick] += 1
+    if st.button("Stimme abgeben"): 
+        st.session_state.v[pick] += 1
+        st.success(f"Stimme für {pick} gezählt!")
+        
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
 
 with col_v2:
     st.header("💡 Wunschliste")
     wish = st.text_input("Welche Aktie fehlt hier?")
-    if st.button("Vorschlagen"): st.success(f"'{wish}' wurde für April notiert!")
+    if st.button("Vorschlagen"): st.success(f"'{wish}' wurde für die nächste Analyse notiert!")
 
 # --- FOOTER ---
 st.divider()
