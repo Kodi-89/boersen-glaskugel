@@ -2,116 +2,103 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.express as px
-import plotly.graph_objects as go
-from fpdf import FPDF
 import random
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Börsen-Glaskugel | Community Edition", page_icon="🔮", layout="wide")
 
-# --- BRANDING & PHILOSOPHIE ---
+# --- BRANDING ---
 st.title("🔮 Die Börsen-Glaskugel")
 st.subheader("Live-Performance Monitor & Community Dashboard")
 st.markdown("---")
 
-# Sidebar
-st.sidebar.header("🛠 Navigation & Info")
-st.sidebar.info("Diese App nutzt Live-Daten von Yahoo Finance zur Analyse von Markttrends.")
-st.sidebar.warning("⚠️ **Regeln:** 1. Kein Mietgeld. 2. Stop-Loss nutzen. 3. Gewinne abschöpfen.")
-
 # --- DATEN-ENGINE ---
 tickers = {
-    "SUSS MicroTec": "SUE.DE", 
-    "Delivery Hero": "DHER.DE", 
-    "Puma SE": "PUM.DE", 
-    "TUI AG": "TUI1.DE", 
-    "Sable Offshore": "SOC", 
-    "Immunic Inc.": "IMUX",
-    "Rheinmetall": "RHM.DE",
-    "Gemini Space Station": "GEMI",
-    "Tesla, Inc.": "TSLA",
-    "AMD, Inc.": "AMD",
-    "Microsoft Corp.": "MSFT"
+    "SUSS MicroTec": "SUE.DE", "Delivery Hero": "DHER.DE", "Puma SE": "PUM.DE", 
+    "TUI AG": "TUI1.DE", "Sable Offshore": "SOC", "Immunic Inc.": "IMUX",
+    "Rheinmetall": "RHM.DE", "Gemini Space Station": "GEMI",
+    "Tesla, Inc.": "TSLA", "AMD, Inc.": "AMD", "Microsoft Corp.": "MSFT"
 }
 
 @st.cache_data(ttl=300)
 def load_data():
     results = []
+    news_list = []
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
             info = t.fast_info
-            current_price = info.last_price
-            prev_close = info.previous_close
+            curr = info.last_price if info.last_price else 0.0
+            prev = info.previous_close if info.previous_close else curr
+            perf = ((curr / prev) - 1) * 100 if prev > 0 else 0.0
             
-            # Berechnung der echten 24h Performance
-            perf = ((current_price / prev_close) - 1) * 100 if prev_close else 0
+            results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
             
-            results.append({
-                "Aktie": name, 
-                "Kurs": round(current_price, 2), 
-                "Symbol": sym,
-                "Performance %": round(perf, 2)
-            })
-        except: 
+            tn = t.news
+            if tn: news_list.append({"Aktie": name, "Headline": tn[0]['title'], "Link": tn[0]['link']})
+        except:
             results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym, "Performance %": 0.0})
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), news_list
 
-live_df = load_data()
+live_df, live_news = load_data()
 
-# --- LAYOUT: LIVE-MONITOR & HEATMAP ---
+# --- LAYOUT: MONITOR & HEATMAP ---
 col_left, col_right = st.columns([1, 1.2])
 
 with col_left:
     st.header("📈 Echtzeit-Kurse")
-    # Styling für die Tabelle (Grün bei Plus, Rot bei Minus)
     st.dataframe(live_df.style.format({"Performance %": "{:.2f}%"}), use_container_width=True)
+    st.write("---")
+    st.subheader("🗞️ Top-Schlagzeilen")
+    for n in live_news[:3]:
+        st.markdown(f"**{n['Aktie']}**: [{n['Headline']}]({n['Link']})")
 
 with col_right:
     st.header("🔥 24h Performance-Map")
-    
-    fig = px.treemap(
-        live_df, 
-        path=['Aktie'], 
-        values=[1]*len(live_df), # Alle Kacheln gleich groß
-        color='Performance %', 
-        color_continuous_scale='RdYlGn',
-        color_continuous_midpoint=0,
-        text_auto='.2f'
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # Der Fix: Wir filtern Werte ohne Kurs aus der Grafik aus, um TypeErrors zu vermeiden
+    df_plot = live_df[live_df["Kurs"] > 0].copy()
+    if not df_plot.empty:
+        fig = px.treemap(
+            df_plot, path=['Aktie'], values=[1]*len(df_plot),
+            color='Performance %', color_continuous_scale='RdYlGn',
+            color_continuous_midpoint=0, text_auto='.2f'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Warte auf Marktdaten...")
 
-# --- STOP-LOSS RECHNER ---
+# --- NEU: LIVE-DEPOT RECHNER ---
 st.divider()
-st.header("📉 Risiko-Management")
-c1, c2, c3 = st.columns(3)
-with c1: entry = st.number_input("Einstieg (€)", value=10.0)
-with c2: risk = st.slider("Risiko (%)", 1, 25, 10)
-with c3:
-    sl = entry * (1 - risk/100)
-    st.metric("Stop-Loss Marke", f"{sl:.2f} €", delta=f"-{risk}%", delta_color="inverse")
+st.header("💰 Live-Depot Simulator")
+st.info("Simuliere hier deine Positionen und sieh, wie sie sich jetzt gerade schlagen.")
+d_c1, d_c2, d_c3 = st.columns(3)
+with d_c1:
+    sim_stock = st.selectbox("Wähle eine Aktie:", list(tickers.keys()))
+with d_c2:
+    sim_qty = st.number_input("Anzahl Aktien", min_value=1, value=10)
+with d_c3:
+    sim_buy_price = st.number_input("Dein Kaufkurs (€)", min_value=0.1, value=15.0)
 
-# --- VOTING & WÜNSCHE ---
+# Kalkulation
+current_val = live_df.loc[live_df["Aktie"] == sim_stock, "Kurs"].values[0]
+total_cost = sim_qty * sim_buy_price
+total_now = sim_qty * current_val
+profit_abs = total_now - total_cost
+profit_pct = (profit_abs / total_cost) * 100 if total_cost > 0 else 0
+
+st.metric(f"Ergebnis für {sim_stock}", f"{total_now:.2f} €", 
+          delta=f"{profit_abs:.2f} € ({profit_pct:.2f}%)")
+
+# --- VOTING ---
 st.divider()
-col_v1, col_v2 = st.columns(2)
-with col_v1:
-    st.header("🗳️ Community-Voting")
-    if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
-    for k in tickers.keys():
-        if k not in st.session_state.v: st.session_state.v[k] = 0
-        
-    pick = st.selectbox("Welcher Wert hat das größte Potenzial?", list(tickers.keys()))
-    if st.button("Stimme abgeben"): 
-        st.session_state.v[pick] += 1
-        st.success(f"Votum für {pick} registriert!")
-        
+st.header("🗳️ Community-Voting")
+if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
+for k in tickers.keys():
+    if k not in st.session_state.v: st.session_state.v[k] = 0
+
+cv1, cv2 = st.columns([1, 2])
+with cv1:
+    pick = st.selectbox("Favorit?", list(tickers.keys()), key="vote_box")
+    if st.button("Abstimmen"): st.session_state.v[pick] += 1
+with cv2:
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
-
-with col_v2:
-    st.header("💡 Wunschliste")
-    wish = st.text_input("Welchen Ticker sollen wir hinzufügen?")
-    if st.button("Vorschlagen"): st.balloons(); st.success(f"'{wish}' wurde vorgemerkt!")
-
-# --- FOOTER ---
-st.divider()
-st.caption("🤝 Open Source Community-Projekt. Keine Anlageberatung.")
