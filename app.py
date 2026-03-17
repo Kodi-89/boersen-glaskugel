@@ -21,10 +21,14 @@ st.sidebar.warning("⚠️ **Regeln:** 1. Kein Mietgeld. 2. Stop-Loss nutzen. 3.
 
 # --- DATEN-ENGINE ---
 tickers = {
-    "SUSS MicroTec": "SUE.DE", "Delivery Hero": "DHER.DE", 
-    "Puma SE": "PUM.DE", "TUI AG": "TUI1.DE", 
-    "Sable Offshore": "SOC", "Immunic Inc.": "IMUX"
+    "SUSS MicroTec": "SUE.DE", 
+    "Delivery Hero": "DHER.DE", 
+    "Puma SE": "PUM.DE", 
+    "TUI AG": "TUI1.DE", 
+    "Sable Offshore": "SOC", 
+    "Immunic Inc.": "IMUX", # <--- HIER MUSS EIN KOMMA STEHEN!
     "Rheinmetall": "RHM.DE"
+
 }
 
 @st.cache_data(ttl=300)
