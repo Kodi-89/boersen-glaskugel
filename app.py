@@ -26,7 +26,7 @@ tickers = {
     "Puma SE": "PUM.DE", 
     "TUI AG": "TUI1.DE", 
     "Sable Offshore": "SOC", 
-    "Immunic Inc.": "IMUX", # <--- HIER MUSS EIN KOMMA STEHEN!
+    "Immunic Inc.": "IMUX", 
     "Rheinmetall": "RHM.DE"
 
 }
