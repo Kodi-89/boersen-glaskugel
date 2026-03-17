@@ -23,7 +23,7 @@ tickers = {
     "Rheinmetall": "RHM.DE", "Tesla, Inc.": "TSLA", "AMD, Inc.": "AMD", "Microsoft": "MSFT"
 }
 
-@st.cache_data(ttl=25)
+@st.cache_data(ttl=20) # TTL etwas kürzer für frische Daten
 def load_data():
     results = []
     news_list = []
@@ -48,23 +48,22 @@ def load_data():
             if n: news_list.append({"Aktie": name, "Title": n[0]['title'], "Link": n[0]['link']})
         except:
             results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym, "Performance %": 0.0, "Signal": "N/A"})
-    return pd.DataFrame(results), news_list
+    
+    # DOPPEL-CHECK: Hier löschen wir alle Duplikate, falls yfinance doppelt liefert
+    df = pd.DataFrame(results).drop_duplicates(subset=['Aktie'], keep='first')
+    return df, news_list
 
 live_df, all_news = load_data()
 
 # --- SIDEBAR: ZOCKER-TOOLS ---
 st.sidebar.header("🕹️ Zocker-Tools")
-
-# 1. Zocker-Tipp
 if st.sidebar.button("🎲 Zufälliger Moonshot-Tipp"):
     tipp = random.choice(live_df["Aktie"].tolist())
-    st.sidebar.info(f"Das System empfiehlt: **{tipp}**! (Keine Anlageberatung, nur Zockerei! 😉)")
+    st.sidebar.info(f"Das System empfiehlt: **{tipp}**!")
 
 st.sidebar.markdown("---")
-
-# 2. Portfolio Rechner
 st.sidebar.subheader("💰 Depot-Live-Check")
-selected_stock = st.sidebar.selectbox("Welche Aktie hältst du?", live_df["Aktie"].tolist())
+selected_stock = st.sidebar.selectbox("Welche Aktie hältst du?", live_df["Aktie"].unique())
 amount = st.sidebar.number_input("Anzahl der Anteile:", min_value=0, value=0)
 
 if amount > 0:
@@ -72,9 +71,9 @@ if amount > 0:
     total_val = amount * row["Kurs"]
     daily_gain = total_val * (row['Performance %'] / 100)
     st.sidebar.metric("Gesamtwert", f"{total_val:,.2f} €")
-    st.sidebar.metric("Tages-Gewinn/Verlust", f"{daily_gain:,.2f} €", delta=f"{row['Performance %']}%")
+    st.sidebar.metric("Tages-GuV", f"{daily_gain:,.2f} €", delta=f"{row['Performance %']}%")
 
-# --- TOP SEKTION: TACHO ---
+# --- TOP SEKTION ---
 col_stats, col_gauge = st.columns([2, 1])
 
 with col_stats:
@@ -90,14 +89,10 @@ with col_gauge:
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = avg_perf,
-        gauge = {
-            'axis': {'range': [-5, 5]},
-            'bar': {'color': "black"},
-            'steps': [
-                {'range': [-5, -1.5], 'color': "red"},
-                {'range': [-1.5, 1.5], 'color': "yellow"},
-                {'range': [1.5, 5], 'color': "green"}]
-        }
+        gauge = {'axis': {'range': [-5, 5]}, 'bar': {'color': "black"},
+                 'steps': [{'range': [-5, -1.5], 'color': "red"},
+                           {'range': [-1.5, 1.5], 'color': "yellow"},
+                           {'range': [1.5, 5], 'color': "green"}]}
     ))
     fig_gauge.update_layout(height=180, margin=dict(l=20, r=20, t=30, b=0))
     st.plotly_chart(fig_gauge, use_container_width=True)
@@ -109,20 +104,12 @@ col_l, col_r = st.columns([1.2, 1])
 
 with col_l:
     st.header("📈 Echtzeit-Monitor")
-    st.dataframe(live_df.style.applymap(
+    # Reset_index sorgt für saubere Zeilen ohne doppelte IDs
+    display_df = live_df.reset_index(drop=True)
+    st.dataframe(display_df.style.applymap(
         lambda x: 'color: #00ff00; font-weight: bold' if 'BUY' in str(x) else ('color: #ff4b4b' if 'CRASH' in str(x) else ''), 
         subset=['Signal']
     ).format({"Performance %": "{:.2f}%"}), use_container_width=True)
-    
-    st.write("---")
-    st.header("🤖 Das Orakel befragen")
-    sel = st.selectbox("Wähle eine Aktie:", sorted(live_df["Aktie"].tolist()))
-    if st.button("Orakel aktivieren"):
-        r = live_df[live_df["Aktie"] == sel].iloc[0]
-        if r["Performance %"] > 3: st.balloons()
-        st.write(f"Das Orakel sagt für **{sel}**: '{r['Signal']}'.")
-        spec_news = next((item for item in all_news if item["Aktie"] == sel), None)
-        if spec_news: st.markdown(f"🔗 [Hier klicken für die News]({spec_news['Link']})")
 
 with col_r:
     st.header("🔥 Performance-Map")
@@ -142,8 +129,7 @@ st.divider()
 if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
 vc1, vc2 = st.columns([1, 2])
 with vc1:
-    st.subheader("🗳️ Vote")
-    pick = st.selectbox("Favorit?", sorted(tickers.keys()), key="v_final")
+    pick = st.selectbox("Favorit?", sorted(live_df["Aktie"].tolist()), key="v_final")
     if st.button("Stimme senden"): st.session_state.v[pick] += 1
 with vc2:
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
