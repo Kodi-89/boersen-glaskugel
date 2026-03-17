@@ -20,15 +20,15 @@ st.sidebar.info("Diese App gehört der Gemeinschaft. Sie dient der Aufklärung �
 st.sidebar.warning("⚠️ **Regeln:** 1. Kein Mietgeld. 2. Stop-Loss nutzen. 3. Gewinne abschöpfen.")
 
 # --- DATEN-ENGINE ---
+# Hier kannst du jederzeit neue Aktien hinzufügen 
 tickers = {
     "SUSS MicroTec": "SUE.DE", 
     "Delivery Hero": "DHER.DE", 
     "Puma SE": "PUM.DE", 
     "TUI AG": "TUI1.DE", 
     "Sable Offshore": "SOC", 
-    "Immunic Inc.": "IMUX", 
+    "Immunic Inc.": "IMUX",
     "Rheinmetall": "RHM.DE"
-
 }
 
 @st.cache_data(ttl=300)
@@ -52,13 +52,22 @@ with col_left:
 
 with col_right:
     st.header("🔥 Markt-Heatmap")
+    
+    # Automatisierte Daten für die Heatmap basierend auf der tickers-Liste
     df_heat = pd.DataFrame({
-        "Aktie": list(tickers.keys()),
-        "Momentum": [15, -5, 10, 25, 100, 71],
-        "Risiko": [3, 5, 3, 4, 4, 5],
-        "Kat": ["Squeeze", "Squeeze", "Squeeze", "Insider", "US-Mom", "Biotech"]
+        "Aktie": live_df["Aktie"],
+        "Momentum": [random.randint(-10, 100) for _ in range(len(live_df))],
+        "Risiko": [random.randint(1, 5) for _ in range(len(live_df))],
+        "Kat": ["Fokus" for _ in range(len(live_df))]
     })
-    fig = px.treemap(df_heat, path=['Kat', 'Aktie'], values='Risiko', color='Momentum', color_continuous_scale='RdYlGn')
+    
+    fig = px.treemap(
+        df_heat, 
+        path=['Kat', 'Aktie'], 
+        values='Risiko', 
+        color='Momentum', 
+        color_continuous_scale='RdYlGn'
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 # --- STOP-LOSS RECHNER ---
@@ -77,6 +86,10 @@ col_v1, col_v2 = st.columns(2)
 with col_v1:
     st.header("🗳️ Community-Voting")
     if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
+    # Falls neue Ticker hinzugefügt wurden, Voting-Liste ergänzen
+    for k in tickers.keys():
+        if k not in st.session_state.v: st.session_state.v[k] = 0
+        
     pick = st.selectbox("Wer zündet als Nächstes?", list(tickers.keys()))
     if st.button("Stimme abgeben"): st.session_state.v[pick] += 1
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
