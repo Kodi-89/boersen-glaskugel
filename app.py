@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.express as px
+from fpdf import FPDF
+import base64
+from datetime import datetime
+import io
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Börsen-Glaskugel", page_icon="🔮", layout="wide")
@@ -9,6 +13,16 @@ st.set_page_config(page_title="Börsen-Glaskugel", page_icon="🔮", layout="wid
 st.title("🔮 Die Börsen-Glaskugel")
 st.subheader("Live-Performance & Community Dashboard")
 st.markdown("---")
+
+# Sidebar
+st.sidebar.header("🛠 Info & Regeln")
+rules = [
+    "1. Kein Mietgeld nutzen.",
+    "2. Immer einen Stop-Loss setzen.",
+    "3. Gewinne konsequent abschöpfen."
+]
+for rule in rules:
+    st.sidebar.warning(rule)
 
 # --- DATEN-ENGINE ---
 tickers = {
@@ -34,6 +48,12 @@ def load_data():
                 curr = t.fast_info.last_price or 0.0
                 perf = 0.0
             
+            # WICHTIGER FIX: Wir stellen sicher, dass alle Werte sauber sind (float)
+            if curr is None or perf is None:
+                curr, perf = 0.0, 0.0
+            else:
+                curr, perf = float(curr), float(perf)
+
             results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
             
             n = t.news
@@ -57,11 +77,17 @@ with col_l:
 
 with col_r:
     st.header("🔥 24h Performance-Map")
-    # Absicherung: Nur Zeilen mit Kurs > 0 nutzen
+    # ABSOLUTE ABSICHERUNG GEGEN TYPERRORS:
+    # 1. Nur Aktien mit Kurs > 0
+    # 2. Nur Aktien mit sauberen Float-Werten
+    # 3. Wir berechnen die Größe direkt im DF
     df_plot = live_df[live_df["Kurs"] > 0].copy()
+    
+    # Sicherstellen, dass die Performance-Spalte numerisch ist und keine "None" enthält
+    df_plot['Performance %'] = pd.to_numeric(df_plot['Performance %'], errors='coerce').fillna(0)
+    df_plot['size'] = 1 
+    
     if not df_plot.empty:
-        # Wir berechnen die Größe der Kacheln direkt im DataFrame
-        df_plot['size'] = 1 
         fig = px.treemap(
             df_plot, path=['Aktie'], values='size',
             color='Performance %', color_continuous_scale='RdYlGn',
@@ -71,22 +97,63 @@ with col_r:
     else:
         st.info("Marktdaten werden geladen...")
 
-# --- NEU: LIVE-DEPOT RECHNER ---
+# --- PDF REPORT DOWNLOADER ---
 st.divider()
-st.header("💰 Live-Depot Simulator")
-c1, c2, c3 = st.columns(3)
-with c1: sim_stock = st.selectbox("Aktie wählen:", live_df["Aktie"].tolist())
-with c2: sim_qty = st.number_input("Anzahl", min_value=1, value=10)
-with c3: sim_buy = st.number_input("Kaufkurs (€)", min_value=0.1, value=10.0)
+st.header("📄 Markt-Bericht")
+st.write("Hier kannst du dir einen aktuellen Schnappschuss deiner Glaskugel-Daten als PDF herunterladen.")
 
-# Kalkulation
-current_price = live_df.loc[live_df["Aktie"] == sim_stock, "Kurs"].values[0]
-if current_price > 0:
-    win_loss = (current_price - sim_buy) * sim_qty
-    win_pct = ((current_price / sim_buy) - 1) * 100
-    st.metric(f"Status: {sim_stock}", f"{current_price * sim_qty:.2f} €", delta=f"{win_loss:.2f} € ({win_pct:.2f}%)")
-else:
-    st.warning("Keine aktuellen Kursdaten für die Berechnung verfügbar.")
+def generate_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    
+    # Titel & Zeit
+    pdf.cell(190, 10, 'Markt-Bericht: Die Börsen-Glaskugel', ln=True, align='C')
+    pdf.set_font('Arial', '', 10)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    pdf.cell(190, 10, f'Stand: {now_str}', ln=True, align='C')
+    pdf.ln(10)
+    
+    # Regeln
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(190, 10, '💡 Die Glaskugel-Regeln:', ln=True)
+    pdf.set_font('Arial', '', 10)
+    for rule in rules:
+        pdf.cell(190, 8, f'  - {rule}', ln=True)
+    pdf.ln(10)
+    
+    # Tabelle: Kopfzeile
+    pdf.set_font('Arial', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(60, 10, 'Aktie', border=1, fill=True)
+    pdf.cell(40, 10, 'Symbol', border=1, fill=True)
+    pdf.cell(40, 10, 'Kurs', border=1, fill=True, align='R')
+    pdf.cell(40, 10, 'Performance %', border=1, fill=True, align='R')
+    pdf.ln(10)
+    
+    # Tabelle: Daten
+    pdf.set_font('Arial', '', 9)
+    # Wir filtern die Tabelle für das PDF auf saubere Daten
+    df_clean = df[df["Kurs"] > 0].copy()
+    for _, row in df_clean.iterrows():
+        pdf.cell(60, 10, str(row['Aktie']), border=1)
+        pdf.cell(40, 10, str(row['Symbol']), border=1)
+        pdf.cell(40, 10, f"{row['Kurs']:.2f} €", border=1, align='R')
+        pdf.cell(40, 10, f"{row['Performance %']:.2f}%", border=1, align='R')
+        pdf.ln(10)
+    
+    # PDF in Bytes umwandeln
+    pdf_out = io.BytesIO(pdf.output(dest='S'))
+    return pdf_out
+
+# PDF Button
+pdf_bytes = generate_pdf(live_df)
+st.download_button(
+    label="Marktbericht als PDF herunterladen",
+    data=pdf_bytes,
+    file_name=f"glaskugel_bericht_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+    mime="application/pdf",
+)
 
 # --- VOTING ---
 st.divider()
