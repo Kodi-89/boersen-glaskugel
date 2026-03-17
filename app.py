@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import plotly.express as px
-from fpdf import FPDF
-import base64
-from datetime import datetime
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Börsen-Glaskugel", page_icon="🔮", layout="wide")
@@ -23,23 +20,17 @@ tickers = {
 @st.cache_data(ttl=60)
 def load_data():
     results = []
-    news_dict = {} # News pro Aktie speichern
+    news_dict = {}
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
             info = t.fast_info
-            curr = info.last_price
-            prev = info.previous_close
-            curr = float(curr) if curr is not None else 0.0
-            prev = float(prev) if prev is not None else 0.0
+            curr = float(info.last_price) if info.last_price else 0.0
+            prev = float(info.previous_close) if info.previous_close else 0.0
             perf = ((curr / prev) - 1) * 100 if prev > 0 else 0.0
-            
             results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
-            
-            # News für das Orakel speichern
             n = t.news
-            if n:
-                news_dict[name] = n[0]['title']
+            if n: news_dict[name] = n[0]['title']
         except:
             results.append({"Aktie": name, "Kurs": 0.0, "Symbol": sym, "Performance %": 0.0})
     return pd.DataFrame(results), news_dict
@@ -53,35 +44,35 @@ with col_l:
     st.header("📈 Echtzeit-Kurse")
     st.dataframe(live_df.style.format({"Performance %": "{:.2f}%"}), use_container_width=True)
     
-    # --- DAS VERBESSERTE KI-ORAKEL ---
     st.write("---")
     st.header("🤖 Das Glaskugel-Orakel")
-    
-    # FIX: set() entfernt Duplikate, sorted() sortiert von A-Z
+    # FIX: Eindeutige Liste für das Menü
     oracle_list = sorted(list(set(live_df["Aktie"].tolist())))
     selected_oracle = st.selectbox("Wähle eine Aktie für eine Prognose:", oracle_list)
     
     if st.button("Orakel befragen"):
         row = live_df[live_df["Aktie"] == selected_oracle].iloc[0]
         perf = row["Performance %"]
-        headline = live_news_dict.get(selected_oracle, "keine aktuellen Schlagzeilen")
+        headline = live_news_dict.get(selected_oracle, "keine frischen Schlagzeilen")
         
         st.write(f"**Analyse für {selected_oracle}:**")
         st.write(f"*Aktuelle News: {headline}*")
         
         if perf > 5:
-            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Das Orakel sagt: Die News '{headline}' zündet gerade richtig. Wer jetzt nicht drin ist, schaut der Falcon 9 beim Start zu!")
+            st.balloons() # RAKETEN-EFFEKT!
+            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Die News '{headline}' zündet! Wer jetzt nicht drin ist, guckt in die Röhre.")
         elif perf > 0:
-            st.info(f"✅ **SOLIDE.** {perf}% sind ordentlich. Die Schlagzeile '{headline}' scheint den Kurs sanft zu stützen. Einmal tief durchatmen und Gewinne laufen lassen.")
+            st.info(f"✅ **SOLIDE.** {perf}% sind grüner Bereich. Die News '{headline}' stützt den Kurs.")
         elif perf < -5:
-            st.error(f"💀 **ALARMSTUFE ROT!** {perf}% Crash. Die News '{headline}' schlägt ein wie ein Meteorit. Das Orakel rät: Helm aufsetzen oder den 'Dip' mutig kaufen.")
+            st.error(f"💀 **ALARM!** {perf}% Crash. '{headline}' zieht den Kurs runter. Das Orakel rät: Nerven aus Stahl oder wegrennen.")
         elif perf < 0:
-            st.warning(f"📉 **MÜDE BULLEN.** {perf}% Minus. Trotz der News '{headline}' fehlt der Schwung. Vielleicht mal eine Kaffeepause einlegen.")
+            st.warning(f"📉 **MÜDE BULLEN.** {perf}% Minus. Trotz der News fehlt der Pfeffer.")
         else:
-            st.write("💤 **NUL-LINIE.** Weder Fisch noch Fleisch. Das Orakel schläft beim Lesen von '{headline}' fast ein.")
+            st.write("💤 **STILLSTAND.** Das Orakel gähnt bei diesen News.")
 
 with col_r:
     st.header("🔥 24h Performance-Map")
+    # ABSOLUTER FIX FÜR DEN ERROR: Nur plotten, wenn Daten da sind!
     df_plot = live_df[live_df["Kurs"] > 0].copy()
     if not df_plot.empty:
         df_plot['size'] = 1 
@@ -91,16 +82,18 @@ with col_r:
             color_continuous_midpoint=0, text_auto='.2f'
         )
         st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("⚠️ Die Börsen machen gerade Pause. Sobald Kurse fließen, glüht hier die Heatmap!")
 
-# --- VOTING ---
+# --- COMMUNITY VOTING ---
 st.divider()
 if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
 v1, v2 = st.columns([1, 2])
 with v1:
     st.header("🗳️ Community-Voting")
-    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list) # Auch hier die saubere Liste
+    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list)
     if st.button("Stimme abgeben"): 
         st.session_state.v[pick] += 1
-        st.success("Danke!")
+        st.toast(f"Stimme für {pick} gezählt!", icon='🔥')
 with v2:
     st.bar_chart(pd.DataFrame(list(st.session_state.v.items()), columns=['Aktie', 'Votes']).set_index('Aktie'))
