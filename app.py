@@ -24,7 +24,7 @@ tickers = {
     "SUSS MicroTec": "SUE.DE", "Delivery Hero": "DHER.DE", 
     "Puma SE": "PUM.DE", "TUI AG": "TUI1.DE", 
     "Sable Offshore": "SOC", "Immunic Inc.": "IMUX"
-    "Rheinmetall": "RHM.DE
+    "Rheinmetall": "RHM.DE"
 }
 
 @st.cache_data(ttl=300)
