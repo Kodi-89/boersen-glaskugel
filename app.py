@@ -25,10 +25,18 @@ def load_data():
         try:
             t = yf.Ticker(sym)
             info = t.fast_info
+            # Sicherstellen, dass wir Zahlen bekommen
             curr = float(info.last_price) if info.last_price else 0.0
             prev = float(info.previous_close) if info.previous_close else 0.0
             perf = ((curr / prev) - 1) * 100 if prev > 0 else 0.0
-            results.append({"Aktie": name, "Kurs": round(curr, 2), "Symbol": sym, "Performance %": round(perf, 2)})
+            
+            results.append({
+                "Aktie": name, 
+                "Kurs": round(curr, 2), 
+                "Symbol": sym, 
+                "Performance %": round(perf, 2)
+            })
+            
             n = t.news
             if n: news_dict[name] = n[0]['title']
         except:
@@ -46,7 +54,7 @@ with col_l:
     
     st.write("---")
     st.header("🤖 Das Glaskugel-Orakel")
-    # FIX: Eindeutige Liste für das Menü
+    # FIX: set() verhindert die doppelten Einträge aus deinem Screenshot
     oracle_list = sorted(list(set(live_df["Aktie"].tolist())))
     selected_oracle = st.selectbox("Wähle eine Aktie für eine Prognose:", oracle_list)
     
@@ -59,39 +67,44 @@ with col_l:
         st.write(f"*Aktuelle News: {headline}*")
         
         if perf > 5:
-            st.balloons() # RAKETEN-EFFEKT!
-            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Die News '{headline}' zündet! Wer jetzt nicht drin ist, guckt in die Röhre.")
+            st.balloons() # Raketen-Effekt bei Erfolg!
+            st.success(f"🚀 **RAKETEN-MODUS!** {perf}% Plus. Die News '{headline}' zündet! Das Orakel sagt: To the Moon!")
         elif perf > 0:
-            st.info(f"✅ **SOLIDE.** {perf}% sind grüner Bereich. Die News '{headline}' stützt den Kurs.")
+            st.info(f"✅ **SOLIDE.** {perf}% sind im grünen Bereich. Die News '{headline}' stützen.")
         elif perf < -5:
-            st.error(f"💀 **ALARM!** {perf}% Crash. '{headline}' zieht den Kurs runter. Das Orakel rät: Nerven aus Stahl oder wegrennen.")
+            st.error(f"💀 **ALARM!** {perf}% Crash. '{headline}' belastet. Das Orakel rät: Helm aufsetzen.")
         elif perf < 0:
-            st.warning(f"📉 **MÜDE BULLEN.** {perf}% Minus. Trotz der News fehlt der Pfeffer.")
+            st.warning(f"📉 **MÜDE BULLEN.** {perf}% Minus. Der Markt braucht wohl auch eine Pause.")
         else:
-            st.write("💤 **STILLSTAND.** Das Orakel gähnt bei diesen News.")
+            st.write("💤 **STILLSTAND.** Das Orakel gähnt.")
 
 with col_r:
     st.header("🔥 24h Performance-Map")
-    # ABSOLUTER FIX FÜR DEN ERROR: Nur plotten, wenn Daten da sind!
-    df_plot = live_df[live_df["Kurs"] > 0].copy()
+    # DER ULTIMATIVE FIX FÜR ZEILE 79/88:
+    # Wir filtern alle ungültigen Zeilen radikal aus
+    df_plot = live_df[(live_df["Kurs"] > 0) & (live_df["Performance %"].notnull())].copy()
+    
     if not df_plot.empty:
         df_plot['size'] = 1 
-        fig = px.treemap(
-            df_plot, path=['Aktie'], values='size',
-            color='Performance %', color_continuous_scale='RdYlGn',
-            color_continuous_midpoint=0, text_auto='.2f'
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        try:
+            fig = px.treemap(
+                df_plot, path=['Aktie'], values='size',
+                color='Performance %', color_continuous_scale='RdYlGn',
+                color_continuous_midpoint=0, text_auto='.2f'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.warning("Grafik-Update fehlgeschlagen. Versuche es gleich erneut.")
     else:
-        st.warning("⚠️ Die Börsen machen gerade Pause. Sobald Kurse fließen, glüht hier die Heatmap!")
+        st.info("⚠️ Die Börsen machen gerade Pause. Sobald Kurse fließen, glüht hier die Heatmap!")
 
-# --- COMMUNITY VOTING ---
+# --- VOTING ---
 st.divider()
 if 'v' not in st.session_state: st.session_state.v = {k: 0 for k in tickers.keys()}
 v1, v2 = st.columns([1, 2])
 with v1:
     st.header("🗳️ Community-Voting")
-    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list)
+    pick = st.selectbox("Wer zündet als Nächstes?", oracle_list, key="voting_select")
     if st.button("Stimme abgeben"): 
         st.session_state.v[pick] += 1
         st.toast(f"Stimme für {pick} gezählt!", icon='🔥')
